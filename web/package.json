@@ -18,6 +18,8 @@
     "test-sync": "cross-env NODE_OPTIONS='--no-experimental-require-module' dotenv -e ../.env.test -e ../.env -- jest --verbose --runInBand --detectOpenHandles --selectProjects sync-server",
     "test-client": "cross-env NODE_OPTIONS='--no-experimental-require-module' dotenv -e ../.env.test -e ../.env -- jest --verbose --runInBand --detectOpenHandles --selectProjects client",
     "test:watch": "cross-env NODE_OPTIONS='--no-experimental-require-module' dotenv -e ../.env.test -e ../.env -- jest --watch --runInBand",
+    "test:coverage": "cross-env NODE_OPTIONS='--no-experimental-require-module' dotenv -e ../.env.test -e ../.env -- jest --coverage --verbose --runInBand --detectOpenHandles",
+    "test:coverage:watch": "cross-env NODE_OPTIONS='--no-experimental-require-module' dotenv -e ../.env.test -e ../.env -- jest --coverage --watch --runInBand",
     "test:e2e": "dotenv -e ../.env.test -e ../.env -- playwright test --reporter=line",
     "test:e2e:server": "cross-env NODE_OPTIONS='--no-experimental-require-module' dotenv -e ../.env.test -e ../.env -- jest --runInBand --detectOpenHandles --verbose --selectProjects e2e-server",
     "build-trace": "dotenv -e ../.env -- next internal trace .next/trace-turbopack"

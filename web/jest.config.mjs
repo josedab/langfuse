@@ -45,6 +45,29 @@ const esModules = ["superjson", "jsonpath-plus"];
 // Add any custom config to be passed to Jest
 /** @type {import('jest').Config} */
 const config = {
+  // Coverage configuration
+  collectCoverage: false, // Set to true via CLI flag --coverage
+  coverageDirectory: "coverage",
+  coverageReporters: ["text", "lcov", "json-summary", "html"],
+  collectCoverageFrom: [
+    "src/**/*.{ts,tsx}",
+    "!src/**/*.d.ts",
+    "!src/**/*.test.{ts,tsx}",
+    "!src/**/*.servertest.{ts,tsx}",
+    "!src/**/*.clienttest.{ts,tsx}",
+    "!src/**/index.ts", // Re-exports
+    "!src/pages/**", // Next.js pages (test via E2E)
+    "!src/env.mjs", // Environment config
+    "!src/__tests__/**", // Test utilities
+  ],
+  coverageThreshold: {
+    global: {
+      branches: 50,
+      functions: 50,
+      lines: 60,
+      statements: 60,
+    },
+  },
   // Add more setup options before each test is run
   projects: [
     {

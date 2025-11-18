@@ -579,6 +579,160 @@ jobs:
       - name: Run e2e tests
         run: pnpm --filter=web run test:e2e:server
 
+  tests-web-coverage:
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    needs:
+      - pre-job
+    if: needs.pre-job.outputs.should_skip != 'true'
+    name: tests-web-coverage
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install golang-migrate for Clickhouse migrations
+        run: |
+          curl -L https://github.com/golang-migrate/migrate/releases/download/v4.19.0/migrate.linux-amd64.tar.gz | tar xvz
+          sudo mv migrate /usr/bin/migrate
+          which migrate
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9.5.0
+      - name: Login to Docker Hub
+        if: github.repository == 'langfuse/langfuse' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME_READ }}
+          password: ${{ secrets.DOCKERHUB_TOKEN_READ }}
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: "pnpm"
+          cache-dependency-path: "pnpm-lock.yaml"
+      - name: install dependencies
+        run: |
+          pnpm install
+      - name: Load default env
+        run: |
+          cp .env.dev.example .env
+          grep -v -e '^LANGFUSE_S3_BATCH_EXPORT_ENABLED=' -e '^NEXT_PUBLIC_LANGFUSE_RUN_NEXT_INIT=' .env.dev.example > .env
+          echo "LANGFUSE_INGESTION_QUEUE_DELAY_MS=1" >> .env
+          echo "LANGFUSE_CACHE_PROMPT_ENABLED=false" >> .env
+          echo "LANGFUSE_INGESTION_CLICKHOUSE_WRITE_INTERVAL_MS=1" >> .env
+      - name: Run dev containers
+        run: |
+          docker compose -f docker-compose.dev.yml up -d
+          sleep 5 # Wait for PostgreSQL to accept connections
+          docker compose ps
+        env:
+          POSTGRES_VERSION: 15
+      - name: Migrate DB
+        run: |
+          pnpm run db:migrate
+          pnpm --filter=shared ch:up
+      - name: Build
+        run: pnpm run build
+        env:
+          NODE_OPTIONS: --max_old_space_size=8192
+      - name: Start Langfuse
+        run: (pnpm run start&)
+        env:
+          LANGFUSE_INIT_ORG_ID: "seed-org-id"
+          LANGFUSE_INIT_ORG_NAME: "Seed Org"
+          LANGFUSE_INIT_ORG_CLOUD_PLAN: "Team"
+          LANGFUSE_INIT_PROJECT_ID: "7a88fb47-b4e2-43b8-a06c-a5ce950dc53a"
+          LANGFUSE_INIT_PROJECT_NAME: "Seed Project"
+          LANGFUSE_INIT_PROJECT_PUBLIC_KEY: "pk-lf-1234567890"
+          LANGFUSE_INIT_PROJECT_SECRET_KEY: "sk-lf-1234567890"
+          LANGFUSE_INIT_USER_EMAIL: "demo@langfuse.com"
+          LANGFUSE_INIT_USER_NAME: "Demo User"
+          LANGFUSE_INIT_USER_PASSWORD: "password"
+      - name: Run tests with coverage
+        run: pnpm --filter=web run test:coverage
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./web/coverage/lcov.info
+          flags: web
+          fail_ci_if_error: false
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-coverage
+          path: web/coverage/
+
+  tests-worker-coverage:
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    needs:
+      - pre-job
+    if: needs.pre-job.outputs.should_skip != 'true'
+    name: tests-worker-coverage
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9.5.0
+      - name: Login to Docker Hub
+        if: github.repository == 'langfuse/langfuse' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME_READ }}
+          password: ${{ secrets.DOCKERHUB_TOKEN_READ }}
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: "pnpm"
+          cache-dependency-path: "pnpm-lock.yaml"
+      - name: install dependencies
+        run: |
+          pnpm install
+      - name: Install golang-migrate for Clickhouse migrations
+        run: |
+          curl -L https://github.com/golang-migrate/migrate/releases/download/v4.19.0/migrate.linux-amd64.tar.gz | tar xvz
+          sudo mv migrate /usr/bin/migrate
+          which migrate
+      - name: Load default env
+        run: |
+          cp .env.dev.example .env
+          cp .env.dev.example web/.env
+          cp .env.dev.example worker/.env
+      - name: Run + migrate
+        run: |
+          docker compose -f docker-compose.dev.yml up -d
+          sleep 5 # Wait for PostgreSQL to accept connections
+          docker compose ps
+      - name: Ensure no unhealthy status
+        run: |
+          if docker compose ps | grep "(unhealthy)"; then
+            echo "One or more services are unhealthy"
+            exit 1
+          else
+            echo "All services are healthy"
+          fi
+      - name: Seed DB
+        run: |
+          pnpm run db:migrate
+          pnpm run db:seed
+          pnpm run --filter=shared ch:up
+      - name: Build
+        run: pnpm --filter=worker... run build
+      - name: Run tests with coverage
+        run: pnpm --filter=worker run test:coverage
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./worker/coverage/lcov.info
+          flags: worker
+          fail_ci_if_error: false
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: worker-coverage
+          path: worker/coverage/
+
   all-ci-passed:
     # This allows us to have a branch protection rule for tests and deploys with matrix
     runs-on: ubuntu-latest
@@ -593,6 +747,8 @@ jobs:
         test-docker-build,
         e2e-server-tests,
         tests-web-async,
+        tests-web-coverage,
+        tests-worker-coverage,
       ]
     if: always()
     outputs:
