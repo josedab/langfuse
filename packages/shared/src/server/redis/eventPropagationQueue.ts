@@ -27,8 +27,8 @@ export class EventPropagationQueue {
           prefix: getQueuePrefix(QueueName.EventPropagationQueue),
           defaultJobOptions: {
             removeOnComplete: true,
-            removeOnFail: 100,
-            attempts: 3,
+            removeOnFail: 10000, // Increased from 100 to allow for DLQ investigation
+            attempts: 6, // Increased from 3 to extend retry window to ~5 minutes
             backoff: {
               type: "exponential",
               delay: 5000,
