@@ -1,0 +1,65 @@
+%% Langfuse Data Ingestion Flow
+%% Commit: 03edd7d9019186493b7008db9f465bf8023cf6d1
+
+sequenceDiagram
+    participant Client as SDK/API Client
+    participant API as Public API<br/>(/api/public/ingestion)
+    participant Auth as ApiAuthService
+    participant RateLimit as RateLimitService
+    participant S3 as S3/MinIO
+    participant Redis as Redis Queue
+    participant Worker as Ingestion Worker
+    participant CH as ClickHouse
+
+    %% Authentication & Validation
+    Client->>API: POST /api/public/ingestion<br/>{batch: Event[]}
+    API->>Auth: Verify API Key
+    Auth-->>API: Project Scope
+    API->>RateLimit: Check Rate Limit
+    RateLimit-->>API: Allowed/Rejected
+
+    %% Event Processing
+    Note over API: Parse & Validate Events<br/>(Zod v4 Schema)
+    Note over API: Group by eventBodyId<br/>Sort updates last
+
+    %% S3 Upload (Non-blocking)
+    par Upload to S3
+        API->>S3: Upload Event Batch<br/>bucket/projectId/type/eventBodyId/key.json
+        S3-->>API: Upload Result
+    end
+
+    %% Queue Dispatch
+    Note over API: Calculate Shard Index<br/>hash(projectId-eventBodyId) % shardCount
+    API->>Redis: Enqueue Job<br/>{projectId, entityId, s3Path}
+
+    API-->>Client: HTTP 207 Multi-Status<br/>{successes, errors}
+
+    %% Worker Processing
+    Redis->>Worker: Dequeue Job
+
+    %% Deduplication Check
+    Worker->>Redis: Check Recently Processed Cache
+    alt Already Processed
+        Redis-->>Worker: Cache Hit
+        Note over Worker: Skip Processing
+    else New Event
+        Redis-->>Worker: Cache Miss
+
+        %% S3 Download
+        Worker->>S3: List & Download Events<br/>Concurrent reads (10 parallel)
+        S3-->>Worker: Event Data
+
+        %% Merge Events
+        Note over Worker: Merge Events by ID<br/>Later events override earlier
+
+        %% Write to ClickHouse
+        Worker->>CH: Batch Insert<br/>(traces/observations/scores)
+        CH-->>Worker: Insert Result
+
+        %% Update Cache
+        Worker->>Redis: Set Recently Processed<br/>TTL: 5 minutes
+    end
+
+    %% Additional Processing
+    Note over Worker: Trigger Eval Jobs<br/>(if configured)
+    Note over Worker: Propagate to Events Table<br/>(if staging enabled)

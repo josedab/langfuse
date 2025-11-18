@@ -1,0 +1,80 @@
+%% Langfuse Authentication Flow
+%% Commit: 03edd7d9019186493b7008db9f465bf8023cf6d1
+
+sequenceDiagram
+    participant User as User Browser
+    participant App as Next.js App
+    participant Auth as NextAuth.js
+    participant Provider as OAuth Provider
+    participant DB as PostgreSQL
+    participant Redis as Redis Cache
+
+    %% OAuth Flow
+    rect rgb(240, 248, 255)
+        Note over User,Redis: OAuth Authentication Flow
+        User->>App: Click "Sign in with Google"
+        App->>Auth: GET /api/auth/signin
+        Auth->>Provider: Redirect to OAuth Provider
+        User->>Provider: Enter Credentials
+        Provider->>Auth: Callback with Code
+        Auth->>Provider: Exchange Code for Token
+        Provider-->>Auth: User Info
+
+        %% Domain Validation
+        alt Domain Restricted
+            Auth->>Auth: Check AUTH_GOOGLE_ALLOWED_DOMAINS
+            Note over Auth: Validate hd claim
+        end
+
+        %% User Creation/Lookup
+        Auth->>DB: Find or Create User
+        DB-->>Auth: User Record
+
+        %% Session Creation
+        Auth->>Auth: Generate JWT Session
+        Auth-->>User: Set Cookie<br/>__Secure-next-auth.session-token
+    end
+
+    %% API Key Authentication
+    rect rgb(255, 248, 240)
+        Note over User,Redis: API Key Authentication Flow
+        User->>App: API Request<br/>Authorization: Basic pk:sk
+        App->>App: Parse Basic Auth Header
+
+        %% Cache Check
+        App->>Redis: Check API Key Cache
+        alt Cache Hit
+            Redis-->>App: Cached Project Scope
+        else Cache Miss
+            App->>DB: Query API Key
+            DB-->>App: API Key Record
+
+            %% Hash Verification
+            Note over App: Verify Secret Key<br/>SHA256 or bcrypt
+
+            %% Cache Result
+            App->>Redis: Cache API Key<br/>TTL: 300s
+        end
+
+        App-->>User: Continue to Handler
+    end
+
+    %% tRPC Protected Route
+    rect rgb(240, 255, 240)
+        Note over User,Redis: tRPC Protected Procedure Flow
+        User->>App: tRPC Request
+        App->>Auth: Get Session from Cookie
+        Auth->>Auth: Verify JWT
+        Auth-->>App: Session with User
+
+        %% RBAC Check
+        App->>App: Check Project Membership
+        Note over App: hasProjectAccess(session, projectId, scope)
+
+        alt Has Access
+            App->>App: Execute Procedure
+            App-->>User: Response
+        else No Access
+            App-->>User: 403 Forbidden
+        end
+    end

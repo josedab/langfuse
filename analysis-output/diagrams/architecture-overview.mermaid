@@ -1,0 +1,99 @@
+%% Langfuse Architecture Overview
+%% Commit: 03edd7d9019186493b7008db9f465bf8023cf6d1
+
+flowchart TB
+    subgraph Clients["Client Layer"]
+        UI["Web UI<br/>(React)"]
+        SDK["SDKs<br/>(Python, JS/TS)"]
+        API["API Consumers"]
+    end
+
+    subgraph WebApp["Web Application (Next.js 14)"]
+        subgraph Routes["Entry Points"]
+            tRPC["tRPC API<br/>/api/trpc"]
+            REST["Public REST<br/>/api/public"]
+            Auth["NextAuth.js<br/>/api/auth"]
+        end
+
+        subgraph Middleware["Middleware Stack"]
+            OTEL_MW["OpenTelemetry"]
+            Error_MW["Error Handling"]
+            Auth_MW["Authentication"]
+            RBAC_MW["RBAC Check"]
+        end
+
+        subgraph Services["Service Layer"]
+            PromptSvc["PromptService"]
+            EvalSvc["EvalService"]
+            DatasetSvc["DatasetService"]
+            OtherSvc["Other Services..."]
+        end
+    end
+
+    subgraph DataLayer["Data & Queue Layer"]
+        subgraph Databases["Databases"]
+            PG[(PostgreSQL<br/>OLTP)]
+            CH[(ClickHouse<br/>OLAP)]
+        end
+
+        subgraph Cache["Cache & Queues"]
+            Redis[("Redis<br/>Cache + Queues")]
+        end
+
+        subgraph Storage["Blob Storage"]
+            S3[("S3/MinIO<br/>Events + Media")]
+        end
+    end
+
+    subgraph WorkerApp["Worker Application (Express)"]
+        subgraph Queues["BullMQ Processors"]
+            IngestionQ["Ingestion<br/>(Sharded)"]
+            EvalQ["Evaluation"]
+            ExportQ["Batch Export"]
+            DeleteQ["Deletion"]
+            OtherQ["Other Queues<br/>(23 total)"]
+        end
+
+        subgraph WorkerSvc["Worker Services"]
+            IngestionSvc["IngestionService"]
+            CHWriter["ClickhouseWriter"]
+        end
+    end
+
+    %% Client connections
+    UI --> tRPC
+    SDK --> REST
+    API --> REST
+
+    %% Web app flow
+    tRPC --> Middleware
+    REST --> Middleware
+    Auth --> Middleware
+    Middleware --> Services
+
+    %% Service to data
+    Services --> PG
+    Services --> CH
+    Services --> Redis
+    Services --> S3
+
+    %% Queue publishing
+    Services -.->|Publish Jobs| Redis
+
+    %% Worker processing
+    Redis -->|Consume Jobs| Queues
+    Queues --> WorkerSvc
+    WorkerSvc --> PG
+    WorkerSvc --> CH
+    WorkerSvc --> S3
+
+    %% Styling
+    classDef client fill:#e1f5fe,stroke:#01579b
+    classDef web fill:#f3e5f5,stroke:#4a148c
+    classDef data fill:#e8f5e9,stroke:#1b5e20
+    classDef worker fill:#fff3e0,stroke:#e65100
+
+    class UI,SDK,API client
+    class tRPC,REST,Auth,Middleware,Services web
+    class PG,CH,Redis,S3 data
+    class IngestionQ,EvalQ,ExportQ,DeleteQ,OtherQ,WorkerSvc worker
