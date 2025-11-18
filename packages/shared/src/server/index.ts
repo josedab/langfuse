@@ -38,6 +38,7 @@ export * from "./ingestion/processEventBatch";
 export * from "../server/ingestion/validateAndInflateScore";
 export * from "../server/queries/public-api-filter-builder";
 export * from "./redis/redis";
+export * from "./redis/pipeline";
 export * from "./redis/traceUpsert";
 export * from "./redis/createEvalQueue";
 export * from "./redis/cloudUsageMeteringQueue";

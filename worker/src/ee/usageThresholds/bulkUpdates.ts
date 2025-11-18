@@ -1,7 +1,7 @@
 import { prisma } from "@langfuse/shared/src/db";
 import {
   logger,
-  invalidateCachedOrgApiKeys,
+  invalidateCachedOrgApiKeysBatch,
   traceException,
 } from "@langfuse/shared/src/server";
 import type { OrgUpdateData } from "./thresholdProcessing";
@@ -80,21 +80,21 @@ export async function bulkUpdateOrganizations(
         `[FREE TIER USAGE THRESHOLDS] Chunk ${chunkNumber}/${totalChunks}: ${chunk.length} succeeded`,
       );
 
-      // Invalidate caches for orgs in this successful chunk that need it
-      const orgsNeedingCacheInvalidation = chunk.filter(
-        (u) => u.shouldInvalidateCache,
-      );
+      // Batch invalidate caches for orgs in this successful chunk that need it
+      const orgsNeedingCacheInvalidation = chunk
+        .filter((u) => u.shouldInvalidateCache)
+        .map((u) => u.orgId);
 
-      for (const update of orgsNeedingCacheInvalidation) {
+      if (orgsNeedingCacheInvalidation.length > 0) {
         try {
-          await invalidateCachedOrgApiKeys(update.orgId);
+          await invalidateCachedOrgApiKeysBatch(orgsNeedingCacheInvalidation);
           logger.info(
-            `[FREE TIER USAGE THRESHOLDS] Invalidated API key cache for org ${update.orgId}`,
+            `[FREE TIER USAGE THRESHOLDS] Batch invalidated API key cache for ${orgsNeedingCacheInvalidation.length} orgs`,
           );
         } catch (cacheError) {
           // Cache invalidation failure shouldn't fail the update
           logger.error(
-            `[FREE TIER USAGE THRESHOLDS] Failed to invalidate cache for org ${update.orgId}`,
+            `[FREE TIER USAGE THRESHOLDS] Failed to batch invalidate cache for ${orgsNeedingCacheInvalidation.length} orgs`,
             cacheError,
           );
           traceException(cacheError);
@@ -197,21 +197,21 @@ export async function bulkUpdateOrganizationsRawSQL(
         `[FREE TIER USAGE THRESHOLDS] Chunk ${chunkNumber}/${totalChunks}: ${chunk.length} succeeded (Raw SQL)`,
       );
 
-      // Handle cache invalidation for orgs in this successful chunk
-      const orgsNeedingCacheInvalidation = chunk.filter(
-        (u) => u.shouldInvalidateCache,
-      );
+      // Batch invalidate caches for orgs in this successful chunk that need it
+      const orgsNeedingCacheInvalidation = chunk
+        .filter((u) => u.shouldInvalidateCache)
+        .map((u) => u.orgId);
 
-      for (const update of orgsNeedingCacheInvalidation) {
+      if (orgsNeedingCacheInvalidation.length > 0) {
         try {
-          await invalidateCachedOrgApiKeys(update.orgId);
+          await invalidateCachedOrgApiKeysBatch(orgsNeedingCacheInvalidation);
           logger.info(
-            `[FREE TIER USAGE THRESHOLDS] Invalidated API key cache for org ${update.orgId}`,
+            `[FREE TIER USAGE THRESHOLDS] Batch invalidated API key cache for ${orgsNeedingCacheInvalidation.length} orgs`,
           );
         } catch (cacheError) {
           // Cache invalidation failure shouldn't fail the update
           logger.error(
-            `[FREE TIER USAGE THRESHOLDS] Failed to invalidate cache for org ${update.orgId}`,
+            `[FREE TIER USAGE THRESHOLDS] Failed to batch invalidate cache for ${orgsNeedingCacheInvalidation.length} orgs`,
             cacheError,
           );
           traceException(cacheError);
