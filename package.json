@@ -92,7 +92,23 @@
       "katex": "^0.16.21",
       "tar-fs": "^2.1.2",
       "rollup@^4.0.0": "^4.22.4",
-      "@types/node-fetch": "^2.6.13"
+      "@types/node-fetch": "^2.6.13",
+      "form-data": "^4.0.4",
+      "ws": "^8.17.1",
+      "solid-js": "^1.9.4",
+      "cross-spawn": "^7.0.5",
+      "playwright": "^1.55.1",
+      "glob": "^11.1.0",
+      "@babel/runtime": "^7.26.10",
+      "@babel/helpers": "^7.26.10",
+      "dompurify": "^3.2.4",
+      "mermaid": "^11.10.0",
+      "jsondiffpatch": "^0.7.2",
+      "vite": "^7.0.8",
+      "js-yaml": "^4.1.1",
+      "brace-expansion": "^2.0.2",
+      "tmp": "^0.2.4",
+      "ai": "^5.0.52"
     },
     "patchedDependencies": {
       "next-auth@4.24.12": "patches/next-auth@4.24.12.patch"
