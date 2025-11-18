@@ -10,6 +10,7 @@ export * from "./services/PromptService";
 export * from "./services/PromptService/types";
 export * from "./services/traces-ui-table-service";
 export * from "./services/InMemoryFilterService";
+export * from "./services/ClickhouseCacheService";
 export * from "./evalJobConfigCache";
 export * from "./auth/apiKeys";
 export * from "./auth/invalidateApiKeys";

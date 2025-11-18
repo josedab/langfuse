@@ -2,8 +2,10 @@ import {
   commandClickhouse,
   parseClickhouseUTCDateTimeFormat,
   queryClickhouse,
+  queryClickhouseCached,
   queryClickhouseStream,
   upsertClickhouse,
+  CacheTTL,
 } from "./clickhouse";
 import {
   createFilterFromFilterState,
@@ -331,12 +333,17 @@ export const hasAnyTrace = async (projectId: string) => {
         LIMIT 1
       `;
 
-      const rows = await queryClickhouse<{ 1: number }>({
+      const rows = await queryClickhouseCached<{ 1: number }>({
         query,
         params: {
           projectId: input.projectId,
         },
+        projectId: input.projectId,
         tags: input.tags,
+        cache: {
+          enabled: true,
+          ttlSeconds: CacheTTL.DASHBOARD,
+        },
       });
 
       return rows.length > 0;
@@ -584,13 +591,18 @@ export const getTracesGroupedByName = async (
         LIMIT 1000;
       `;
 
-      return queryClickhouse<{
+      return queryClickhouseCached<{
         name: string;
         count: string;
       }>({
         query,
         params: input.params,
+        projectId,
         tags: input.tags,
+        cache: {
+          enabled: true,
+          ttlSeconds: CacheTTL.METRICS,
+        },
       });
     },
   });
@@ -779,12 +791,17 @@ export const getTracesGroupedByTags = async (props: GroupedTracesQueryProp) => {
         LIMIT 1000;
       `;
 
-      return queryClickhouse<{
+      return queryClickhouseCached<{
         value: string;
       }>({
         query,
         params: input.params,
+        projectId,
         tags: input.tags,
+        cache: {
+          enabled: true,
+          ttlSeconds: CacheTTL.METRICS,
+        },
       });
     },
   });

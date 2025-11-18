@@ -5,7 +5,11 @@ import {
   PreferredClickhouseService,
 } from "../clickhouse/client";
 import { logger } from "../logger";
-import { getTracer, instrumentAsync } from "../instrumentation";
+import {
+  getTracer,
+  instrumentAsync,
+  recordHistogram,
+} from "../instrumentation";
 import { randomUUID } from "crypto";
 import { getClickhouseEntityType } from "../clickhouse/schemaUtils";
 import { NodeClickHouseClientConfigOptions } from "@clickhouse/client/dist/config";
@@ -16,6 +20,11 @@ import {
   StorageServiceFactory,
 } from "../services/StorageService";
 import { ClickHouseSettings } from "@clickhouse/client";
+import {
+  ClickhouseCacheService,
+  CacheConfig,
+  generateCacheKey,
+} from "../services/ClickhouseCacheService";
 
 /**
  * Custom error class for ClickHouse resource-related errors
@@ -106,6 +115,8 @@ export async function upsertClickhouse<
   records: T[];
   eventBodyMapper: (body: T) => Record<string, unknown>; // eslint-disable-line no-unused-vars
   tags?: Record<string, string>;
+  /** Set to true to skip cache invalidation (e.g., for bulk imports) */
+  skipCacheInvalidation?: boolean;
 }): Promise<void> {
   return await instrumentAsync(
     { name: "clickhouse-upsert", spanKind: SpanKind.CLIENT },
@@ -198,6 +209,28 @@ export async function upsertClickhouse<
           logger.debug(
             `Failed to parse clickhouse summary header ${summaryHeader}`,
             error,
+          );
+        }
+      }
+
+      // Invalidate cache for affected projects
+      if (!opts.skipCacheInvalidation) {
+        const cacheService = ClickhouseCacheService.getInstance();
+        if (cacheService.isEnabled()) {
+          // Get unique project IDs from records
+          const projectIds = [
+            ...new Set(
+              opts.records
+                .map((r) => r.project_id as string)
+                .filter((id) => id),
+            ),
+          ];
+
+          // Invalidate cache for each project
+          await Promise.all(
+            projectIds.map((projectId) =>
+              cacheService.invalidateProject(projectId),
+            ),
           );
         }
       }
@@ -496,3 +529,96 @@ export function clickhouseCompliantRandomCharacters() {
   });
   return result;
 }
+
+/**
+ * Query ClickHouse with optional Redis caching
+ *
+ * @example
+ * ```typescript
+ * const results = await queryClickhouseCached({
+ *   query: "SELECT count() FROM traces WHERE project_id = {projectId: String}",
+ *   params: { projectId: "123" },
+ *   projectId: "123",
+ *   cache: {
+ *     enabled: true,
+ *     ttlSeconds: 60,
+ *   },
+ * });
+ * ```
+ */
+export async function queryClickhouseCached<T>(opts: {
+  query: string;
+  params?: Record<string, unknown> | undefined;
+  projectId: string;
+  cache: CacheConfig;
+  clickhouseConfigs?: NodeClickHouseClientConfigOptions;
+  tags?: Record<string, string>;
+  preferredClickhouseService?: PreferredClickhouseService;
+  clickhouseSettings?: ClickHouseSettings;
+}): Promise<T[]> {
+  const {
+    query,
+    params = {},
+    projectId,
+    cache,
+    clickhouseConfigs,
+    tags,
+    preferredClickhouseService,
+    clickhouseSettings,
+  } = opts;
+
+  const cacheService = ClickhouseCacheService.getInstance();
+
+  // Skip cache if disabled globally or for this query
+  if (!cache.enabled || !cacheService.isEnabled()) {
+    return queryClickhouse<T>({
+      query,
+      params,
+      clickhouseConfigs,
+      tags,
+      preferredClickhouseService,
+      clickhouseSettings,
+    });
+  }
+
+  const cacheKey = generateCacheKey(query, projectId, params);
+
+  // Try cache first (unless skipCacheRead is set)
+  if (!cache.skipCacheRead) {
+    const cached = await cacheService.get<T[]>(cacheKey);
+    if (cached !== null) {
+      return cached;
+    }
+  }
+
+  // Execute query
+  const startTime = Date.now();
+  const result = await queryClickhouse<T>({
+    query,
+    params,
+    clickhouseConfigs,
+    tags: {
+      ...tags,
+      cached: "false",
+    },
+    preferredClickhouseService,
+    clickhouseSettings,
+  });
+  const queryLatency = Date.now() - startTime;
+
+  // Record query latency for cache miss
+  recordHistogram("langfuse.clickhouse.query_latency_ms", queryLatency, {
+    cached: "false",
+  });
+
+  // Cache result (unless skipCacheWrite is set)
+  if (!cache.skipCacheWrite) {
+    const ttl = cache.ttlSeconds || env.LANGFUSE_CACHE_CLICKHOUSE_DEFAULT_TTL_SECONDS;
+    await cacheService.set(cacheKey, result, ttl);
+  }
+
+  return result;
+}
+
+// Re-export cache types and utilities for convenience
+export { CacheConfig, CacheTTL } from "../services/ClickhouseCacheService";
