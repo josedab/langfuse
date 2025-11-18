@@ -160,12 +160,21 @@ export const ingestionQueueProcessorBuilder = (
         recordHistogram("langfuse.ingestion.s3_file_size_bytes", fileSize, {
           skippedS3List: "true",
         });
+        recordIncrement("langfuse.ingestion.s3_access", 1, {
+          method: "direct",
+          entity_type: clickhouseEntityType,
+        });
         totalS3DownloadSizeBytes += fileSize;
 
         const parsedFile = JSON.parse(file);
         events.push(...(Array.isArray(parsedFile) ? parsedFile : [parsedFile]));
       } else {
         eventFiles = await s3Client.listFiles(s3Prefix);
+
+        recordIncrement("langfuse.ingestion.s3_access", 1, {
+          method: "list",
+          entity_type: clickhouseEntityType,
+        });
 
         // Process files in batches
         // If a user has 5k events, this will likely take 100 seconds.

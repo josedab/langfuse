@@ -276,8 +276,13 @@ export const processEventBatch = async (
         (source === "otel" ||
           projectIdsToSkipS3List.includes(authCheck.scope.projectId));
 
+      // Skip S3 LIST operation when:
+      // 1. Global feature flag is enabled (default: true) - optimizes all events
+      // 2. Legacy behavior: dataset_run_items or observations from OTel/specific projects
       const shouldSkipS3List =
-        isDatasetRunItemEvent || (isObservationEvent && isOtelOrSkipS3Project);
+        env.LANGFUSE_S3_SKIP_LIST_ENABLED === "true" ||
+        isDatasetRunItemEvent ||
+        (isObservationEvent && isOtelOrSkipS3Project);
 
       const { isSampled, isSamplingConfigured } = isTraceIdInSample({
         projectId: authCheck.scope.projectId,

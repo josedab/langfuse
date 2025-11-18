@@ -136,6 +136,7 @@ const EnvSchema = z.object({
   LANGFUSE_CLICKHOUSE_DELETION_TIMEOUT_MS: z.coerce.number().default(600_000), // 10 minutes
   LANGFUSE_CLICKHOUSE_QUERY_MAX_ATTEMPTS: z.coerce.number().default(3), // Maximum attempts for socket hang up errors
   LANGFUSE_SKIP_S3_LIST_FOR_OBSERVATIONS_PROJECT_IDS: z.string().optional(),
+  LANGFUSE_S3_SKIP_LIST_ENABLED: z.enum(["true", "false"]).default("true"),
   LANGFUSE_INGESTION_PROCESSING_SAMPLED_PROJECTS: z
     .string()
     .optional()
